@@ -102,8 +102,12 @@ async def player_worker(guild: discord.Guild, state: GuildPlayer):
                 )
 
             try:
-                source = discord.FFmpegPCMAudio(track["url"], **FFMPEG_OPTIONS)
+                # FFmpeg codifica direttamente in Opus: non dipendiamo dalla
+                # disponibilità della libreria libopus caricata da discord.py.
+                source = discord.FFmpegOpusAudio(track["url"], bitrate=128, **FFMPEG_OPTIONS)
+                print(f"Avvio audio: {track['title']} | Opus={source.is_opus()}")
                 voice.play(source, after=after_playback)
+                print(f"Audio in riproduzione: {voice.is_playing()}")
                 await finished
             except Exception as error:
                 print(f"Impossibile riprodurre {track['title']}: {error}")
@@ -215,14 +219,17 @@ async def testaudio(interaction: discord.Interaction):
 
         def after_playback(error):
             if error:
-                print(f"Errore test audio: {error}")
+                logging.exception("Errore nel player audio", exc_info=error)
             else:
-                print("Test audio completato.")
+                print("Test audio completato: FFmpeg ha terminato i 10 secondi.")
 
-        source = discord.FFmpegPCMAudio(audio_path, options="-vn")
+        print(f"Voice diagnostics: connected={voice.is_connected()}, endpoint={voice.endpoint}, opus_loaded={discord.opus.is_loaded()}")
+        source = discord.FFmpegOpusAudio(audio_path, bitrate=128, options="-vn")
+        print(f"Test source pronta: opus={source.is_opus()}")
         voice.play(source, after=after_playback)
+        print(f"Test avviato: is_playing={voice.is_playing()}")
 
-        await interaction.followup.send("🔊 Test audio avviato: dovresti sentire un tono per 10 secondi.")
+        await interaction.followup.send("🔊 Test audio Opus avviato per 10 secondi.")
 
     except Exception as error:
         logging.exception("Errore durante /testaudio")
