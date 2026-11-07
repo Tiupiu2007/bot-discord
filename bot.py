@@ -141,7 +141,7 @@ async def ensure_voice(interaction: discord.Interaction) -> discord.VoiceClient:
 
         print(f"Connessione vocale: server={guild.id}, canale={channel.id}, nome={channel.name}")
         try:
-            voice = await channel.connect(timeout=30, reconnect=True, self_deaf=True)
+            voice = await channel.connect(timeout=30, reconnect=True, self_deaf=False)
             print(f"Connessione vocale completata: {voice.channel}")
             return voice
         except Exception:
