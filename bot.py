@@ -214,6 +214,9 @@ async def stop(interaction: discord.Interaction):
             break
 
     voice.stop()
+    if state.task and not state.task.done():
+        state.task.cancel()
+    state.task = None
     await voice.disconnect()
     await interaction.response.send_message("⏹️ Riproduzione fermata, coda svuotata e bot disconnesso.")
 
