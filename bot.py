@@ -42,6 +42,13 @@ class GuildPlayer:
 
 
 players: dict[int, GuildPlayer] = {}
+voice_connect_locks: dict[int, asyncio.Lock] = {}
+
+
+def get_voice_lock(guild_id: int) -> asyncio.Lock:
+    if guild_id not in voice_connect_locks:
+        voice_connect_locks[guild_id] = asyncio.Lock()
+    return voice_connect_locks[guild_id]
 
 
 def get_player(guild_id: int) -> GuildPlayer:
@@ -114,14 +121,38 @@ async def ensure_voice(interaction: discord.Interaction) -> discord.VoiceClient:
         raise app_commands.AppCommandError("Devi essere in un canale vocale prima di usare questo comando.")
 
     channel = interaction.user.voice.channel
-    voice = interaction.guild.voice_client
+    guild = interaction.guild
 
-    if voice and voice.is_connected():
-        if voice.channel != channel:
-            raise app_commands.AppCommandError("Devi essere nello stesso canale vocale del bot.")
-        return voice
+    # Evita due connessioni contemporanee allo stesso server.
+    async with get_voice_lock(guild.id):
+        voice = guild.voice_client
 
-    return await channel.connect()
+        if voice and voice.is_connected():
+            if voice.channel != channel:
+                raise app_commands.AppCommandError("Devi essere nello stesso canale vocale del bot.")
+            return voice
+
+        # Elimina eventuali connessioni rimaste in uno stato incompleto.
+        if voice:
+            try:
+                await voice.disconnect(force=True)
+            except Exception:
+                pass
+
+        print(f"Connessione vocale: server={guild.id}, canale={channel.id}, nome={channel.name}")
+        try:
+            voice = await channel.connect(timeout=30, reconnect=True, self_deaf=True)
+            print(f"Connessione vocale completata: {voice.channel}")
+            return voice
+        except Exception:
+            # Non lasciare un VoiceClient mezzo aperto dopo un handshake fallito.
+            stale_voice = guild.voice_client
+            if stale_voice:
+                try:
+                    await stale_voice.disconnect(force=True)
+                except Exception:
+                    pass
+            raise
 
 
 @bot.event
@@ -165,14 +196,12 @@ async def play(interaction: discord.Interaction, query: str):
 
 @bot.tree.command(name="testaudio", description="Testa la riproduzione audio del bot.")
 async def testaudio(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True, ephemeral=True)
     try:
         voice = await ensure_voice(interaction)
 
         if voice.is_playing() or voice.is_paused():
-            await interaction.response.send_message(
-                "Ferma prima la riproduzione con /stop.",
-                ephemeral=True
-            )
+            await interaction.followup.send("Ferma prima la riproduzione con /stop.", ephemeral=True)
             return
 
         audio_path = os.path.join(
@@ -181,10 +210,7 @@ async def testaudio(interaction: discord.Interaction):
         )
 
         if not os.path.isfile(audio_path):
-            await interaction.response.send_message(
-                "File test.wav non trovato.",
-                ephemeral=True
-            )
+            await interaction.followup.send("File test.wav non trovato.", ephemeral=True)
             return
 
         def after_playback(error):
@@ -196,15 +222,11 @@ async def testaudio(interaction: discord.Interaction):
         source = discord.FFmpegPCMAudio(audio_path, options="-vn")
         voice.play(source, after=after_playback)
 
-        await interaction.response.send_message(
-            "🔊 Test audio avviato: dovresti sentire un tono per 10 secondi."
-        )
+        await interaction.followup.send("🔊 Test audio avviato: dovresti sentire un tono per 10 secondi.")
 
     except Exception as error:
-        await interaction.response.send_message(
-            f"Errore durante il test: {error}",
-            ephemeral=True
-        )
+        logging.exception("Errore durante /testaudio")
+        await interaction.followup.send(f"Errore durante il test: {error}", ephemeral=True)
 
 @bot.tree.command(name="skip", description="Salta il brano attuale.")
 async def skip(interaction: discord.Interaction):
@@ -273,11 +295,14 @@ async def stop(interaction: discord.Interaction):
 
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    message = str(error)
-    if interaction.response.is_done():
-        await interaction.followup.send(message, ephemeral=True)
-    else:
-        await interaction.response.send_message(message, ephemeral=True)
+    message = str(error) or "Si è verificato un errore durante il comando."
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    except discord.HTTPException:
+        logging.exception("Impossibile inviare il messaggio di errore dell'interazione")
 
 
 logging.basicConfig(level=logging.INFO)
