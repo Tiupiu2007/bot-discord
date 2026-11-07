@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Optional
@@ -278,5 +279,9 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
     else:
         await interaction.response.send_message(message, ephemeral=True)
 
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("discord.voice_client").setLevel(logging.DEBUG)
+logging.getLogger("discord.voice_state").setLevel(logging.DEBUG)
 
 bot.run(TOKEN)
