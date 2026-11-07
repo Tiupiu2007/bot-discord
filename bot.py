@@ -126,8 +126,15 @@ async def ensure_voice(interaction: discord.Interaction) -> discord.VoiceClient:
 @bot.event
 async def on_ready():
     try:
-        synced = await bot.tree.sync()
-        print(f"Connesso come {bot.user}. Comandi slash sincronizzati: {len(synced)}")
+        guild = discord.Object(id=1410595810852474892)
+
+        bot.tree.copy_global_to(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
+
+        print(f"Connesso come {bot.user}")
+        print(f"Comandi sincronizzati nel server: {len(synced)}")
+        print("Comandi:", [command.name for command in synced])
+
     except Exception as error:
         print(f"Errore sincronizzazione comandi: {error}")
 
@@ -155,6 +162,48 @@ async def play(interaction: discord.Interaction, query: str):
     except Exception as error:
         await interaction.followup.send(f"Non sono riuscito ad avviare la riproduzione: {error}")
 
+@bot.tree.command(name="testaudio", description="Testa la riproduzione audio del bot.")
+async def testaudio(interaction: discord.Interaction):
+    try:
+        voice = await ensure_voice(interaction)
+
+        if voice.is_playing() or voice.is_paused():
+            await interaction.response.send_message(
+                "Ferma prima la riproduzione con /stop.",
+                ephemeral=True
+            )
+            return
+
+        audio_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "test.wav"
+        )
+
+        if not os.path.isfile(audio_path):
+            await interaction.response.send_message(
+                "File test.wav non trovato.",
+                ephemeral=True
+            )
+            return
+
+        def after_playback(error):
+            if error:
+                print(f"Errore test audio: {error}")
+            else:
+                print("Test audio completato.")
+
+        source = discord.FFmpegPCMAudio(audio_path, options="-vn")
+        voice.play(source, after=after_playback)
+
+        await interaction.response.send_message(
+            "🔊 Test audio avviato: dovresti sentire un tono per 10 secondi."
+        )
+
+    except Exception as error:
+        await interaction.response.send_message(
+            f"Errore durante il test: {error}",
+            ephemeral=True
+        )
 
 @bot.tree.command(name="skip", description="Salta il brano attuale.")
 async def skip(interaction: discord.Interaction):
