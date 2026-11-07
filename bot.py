@@ -138,8 +138,8 @@ async def play(interaction: discord.Interaction, query: str):
     await interaction.response.defer(thinking=True)
 
     try:
-        voice = await ensure_voice(interaction)
         track = await extract_track(query)
+        voice = await ensure_voice(interaction)
         state = get_player(interaction.guild_id)
         await state.queue.put(track)
 
